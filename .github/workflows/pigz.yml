@@ -100,7 +100,7 @@ jobs:
         CODECOV_DIR:   "."
 
     - name: Upload build errors
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       if: failure()
       with:
         name: ${{ matrix.name }} (cmake)
