@@ -11,17 +11,11 @@
 #undef NDEBUG
 #include <assert.h>
 #include <inttypes.h>
-#include <stdint.h>
 
 /* get definition of internal structure so we can mess with it (see pull()),
    and so we can call inflate_trees() (see cover5()) */
-#define ZLIB_INTERNAL
 #include "zbuild.h"
-#ifdef ZLIB_COMPAT
-#  include "zlib.h"
-#else
-#  include "zlib-ng.h"
-#endif
+#include "zutil.h"
 #include "inftrees.h"
 #include "inflate.h"
 

@@ -48,6 +48,7 @@
  */
 
 #include "zbuild.h"
+#include "cpu_features.h"
 #include "deflate.h"
 #include "deflate_p.h"
 #include "functable.h"
@@ -82,7 +83,7 @@ const char PREFIX(deflate_copyright)[] = " deflate 1.2.11.f Copyright 1995-2016 
 /* Invoked at the beginning of deflateParams(). Useful for updating arch-specific compression parameters. */
 #  define DEFLATE_PARAMS_HOOK(strm, level, strategy, hook_flush) do {} while (0)
 /* Returns whether the last deflate(flush) operation did everything it's supposed to do. */
-# define DEFLATE_DONE(strm, flush) 1
+#  define DEFLATE_DONE(strm, flush) 1
 /* Adjusts the upper bound on compressed data length based on compression parameters and uncompressed data length.
  * Useful when arch-specific deflation code behaves differently than regular zlib-ng algorithms. */
 #  define DEFLATE_BOUND_ADJUST_COMPLEN(strm, complen, sourceLen) do {} while (0)
@@ -113,12 +114,6 @@ Z_INTERNAL block_state deflate_huff  (deflate_state *s, int flush);
 static void lm_set_level         (deflate_state *s, int level);
 static void lm_init              (deflate_state *s);
 Z_INTERNAL unsigned read_buf  (PREFIX3(stream) *strm, unsigned char *buf, unsigned size);
-
-extern void crc_reset(deflate_state *const s);
-#ifdef X86_PCLMULQDQ_CRC
-extern void crc_finalize(deflate_state *const s);
-#endif
-extern void copy_with_crc(PREFIX3(stream) *strm, unsigned char *dst, unsigned long size);
 
 extern uint32_t update_hash_roll        (deflate_state *const s, uint32_t h, uint32_t val);
 extern void     insert_string_roll      (deflate_state *const s, uint32_t str, uint32_t count);
@@ -199,11 +194,7 @@ int32_t Z_EXPORT PREFIX(deflateInit2_)(PREFIX3(stream) *strm, int32_t level, int
     int wrap = 1;
     static const char my_version[] = PREFIX2(VERSION);
 
-#if defined(X86_FEATURES)
-    x86_check_features();
-#elif defined(ARM_FEATURES)
-    arm_check_features();
-#endif
+    cpu_check_features();
 
     if (version == NULL || version[0] != my_version[0] || stream_size != sizeof(PREFIX3(stream))) {
         return Z_VERSION_ERROR;
@@ -454,7 +445,7 @@ int32_t Z_EXPORT PREFIX(deflateResetKeep)(PREFIX3(stream) *strm) {
 
 #ifdef GZIP
     if (s->wrap == 2)
-        crc_reset(s);
+        strm->adler = functable.crc32_fold_reset(&s->crc_fold);
     else
 #endif
         strm->adler = ADLER32_INITIAL_VALUE;
@@ -617,11 +608,11 @@ unsigned long Z_EXPORT PREFIX(deflateBound)(PREFIX3(stream) *strm, unsigned long
         wraplen = 0;
         break;
     case 1:                                 /* zlib wrapper */
-        wraplen = 6 + (s->strstart ? 4 : 0);
+        wraplen = ZLIB_WRAPLEN + (s->strstart ? 4 : 0);
         break;
 #ifdef GZIP
     case 2:                                 /* gzip wrapper */
-        wraplen = 18;
+        wraplen = GZIP_WRAPLEN;
         if (s->gzhead != NULL) {            /* user-supplied gzip header */
             unsigned char *str;
             if (s->gzhead->extra != NULL) {
@@ -645,7 +636,7 @@ unsigned long Z_EXPORT PREFIX(deflateBound)(PREFIX3(stream) *strm, unsigned long
         break;
 #endif
     default:                                /* for compiler happiness */
-        wraplen = 6;
+        wraplen = ZLIB_WRAPLEN;
     }
 
     /* if not default parameters, return conservative bound */
@@ -653,8 +644,14 @@ unsigned long Z_EXPORT PREFIX(deflateBound)(PREFIX3(stream) *strm, unsigned long
             s->w_bits != 15 || HASH_BITS < 15)
         return complen + wraplen;
 
-    /* default settings: return tight bound for that case */
-    return sourceLen + (sourceLen >> 12) + (sourceLen >> 14) + (sourceLen >> 25) + 13 - 6 + wraplen;
+#ifndef NO_QUICK_STRATEGY
+    return sourceLen                       /* The source size itself */
+      + DEFLATE_QUICK_OVERHEAD(sourceLen)  /* Source encoding overhead, padded to next full byte */
+      + DEFLATE_BLOCK_OVERHEAD             /* Deflate block overhead bytes */
+      + wraplen;                           /* none, zlib or gzip wrapper */
+#else
+    return sourceLen + (sourceLen >> 4) + 7 + wraplen;
+#endif
 }
 
 /* =========================================================================
@@ -780,7 +777,7 @@ int32_t Z_EXPORT PREFIX(deflate)(PREFIX3(stream) *strm, int32_t flush) {
 #ifdef GZIP
     if (s->status == GZIP_STATE) {
         /* gzip header */
-        crc_reset(s);
+        functable.crc32_fold_reset(&s->crc_fold);
         put_byte(s, 31);
         put_byte(s, 139);
         put_byte(s, 8);
@@ -897,7 +894,7 @@ int32_t Z_EXPORT PREFIX(deflate)(PREFIX3(stream) *strm, int32_t flush) {
                 }
             }
             put_short(s, (uint16_t)strm->adler);
-            crc_reset(s);
+            functable.crc32_fold_reset(&s->crc_fold);
         }
         s->status = BUSY_STATE;
 
@@ -968,9 +965,8 @@ int32_t Z_EXPORT PREFIX(deflate)(PREFIX3(stream) *strm, int32_t flush) {
     /* Write the trailer */
 #ifdef GZIP
     if (s->wrap == 2) {
-#  ifdef X86_PCLMULQDQ_CRC
-        crc_finalize(s);
-#  endif
+        strm->adler = functable.crc32_fold_final(&s->crc_fold);
+
         put_uint32(s, strm->adler);
         put_uint32(s, (uint32_t)strm->total_in);
     } else
@@ -1082,7 +1078,7 @@ Z_INTERNAL unsigned read_buf(PREFIX3(stream) *strm, unsigned char *buf, unsigned
         memcpy(buf, strm->next_in, len);
 #ifdef GZIP
     } else if (strm->state->wrap == 2) {
-        copy_with_crc(strm, buf, len);
+        functable.crc32_fold_copy(&strm->state->crc_fold, buf, strm->next_in, len);
 #endif
     } else {
         memcpy(buf, strm->next_in, len);

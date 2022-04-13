@@ -7,7 +7,6 @@
 #ifdef ZLIB_DEBUG
 #  include <ctype.h>
 #  include <inttypes.h>
-#  include <stdint.h>
 #endif
 
 
@@ -109,7 +108,7 @@ static inline uint32_t zng_emit_lit(deflate_state *s, const ct_data *ltree, unsi
     s->bi_valid = bi_valid;
     s->bi_buf = bi_buf;
 
-    Tracecv(isgraph(c), (stderr, " '%c' ", c));
+    Tracecv(isgraph(c & 0xff), (stderr, " '%c' ", c));
 
     return ltree[c].Len;
 }
