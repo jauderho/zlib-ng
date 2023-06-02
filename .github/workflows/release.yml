@@ -85,7 +85,7 @@ jobs:
         7z a -tzip ../zlib-ng-${{ matrix.deploy-name }}.zip bin include lib ../LICENSE.md ../PORTING.md ../README.md
 
     - name: Upload release (Windows)
-      uses: svenstaro/upload-release-action@2.5.0
+      uses: svenstaro/upload-release-action@2.6.1
       if: runner.os == 'Windows'
       with:
         asset_name: zlib-ng-${{ matrix.deploy-name }}.zip
