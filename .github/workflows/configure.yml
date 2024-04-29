@@ -229,7 +229,7 @@ jobs:
         UBSAN_OPTIONS: print_stacktrace=1:abort_on_error=1:halt_on_error=1
 
     - name: Upload build errors
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: failure()
       with:
         name: ${{ matrix.name }} (configure)
