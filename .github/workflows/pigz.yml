@@ -51,10 +51,10 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Checkout test corpora
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         repository: zlib-ng/corpora
         path: test/data/corpora
